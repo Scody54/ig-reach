@@ -17,7 +17,8 @@ import analyzer  # noqa: E402
 import captions  # noqa: E402
 import demo_data  # noqa: E402
 import discovery  # noqa: E402
-from ig_client import GraphError, IGClient, exchange_code, login_url  # noqa: E402
+from ig_client import _POOL, GraphError, IGClient, exchange_code, login_url  # noqa: E402
+import time  # noqa: E402
 
 APP_ID = os.getenv("META_APP_ID", "")
 APP_SECRET = os.getenv("META_APP_SECRET", "")
@@ -72,7 +73,8 @@ def graph_error(e):
 def index():
     return render_template("index.html", configured=bool(APP_ID and APP_SECRET),
                            logged_in=bool(session.get("token")) or is_demo(),
-                           demo=is_demo(), username=session.get("username"))
+                           demo=is_demo(), username=session.get("username"),
+                           current_ig=session.get("ig_id", ""))
 
 
 @app.route("/login")
@@ -165,29 +167,41 @@ def accounts():
 def select():
     body = request.get_json(force=True)
     session["ig_id"], session["username"] = body["ig_id"], body.get("username")
+    _DATA.pop(body["ig_id"], None)
     return jsonify({"ok": True})
 
 
-def _own():
-    """Profile + recent media for the logged-in account."""
+_DATA = {}  # ig_id -> (fetched_at, profile, media_with_insights, account_insights)
+DATA_TTL = 600  # 10 minutes: Home, Review and Compare share one fetch
+
+
+def _own_full(refresh=False):
+    """Profile + last 30 posts (each with its insights) + account insights, cached per account."""
     if is_demo():
-        return demo_data.own()
-    c, ig = client(), session["ig_id"]
-    return c.profile(ig), c.media(ig, limit=30)
+        p, m = demo_data.own()
+        return p, m, demo_data.insights()
+    ig = session["ig_id"]
+    hit = _DATA.get(ig)
+    if hit and not refresh and time.time() - hit[0] < DATA_TTL:
+        return hit[1], hit[2], hit[3]
+    c = client()
+    fp, fm, fi = _POOL.submit(c.profile, ig), _POOL.submit(c.media, ig, 30), _POOL.submit(c.account_insights, ig)
+    profile, media, ins = fp.result(), fm.result(), fi.result()
+    c.media_insights_bulk(media, lambda m: analyzer.media_format(m) == "Reel")
+    _DATA[ig] = (time.time(), profile, media, ins)
+    return profile, media, ins
+
+
+def _own():
+    p, m, _ = _own_full()
+    return p, m
 
 
 @app.get("/api/dashboard")
 def dashboard():
     if r := need_login():
         return r
-    profile, media = _own()
-    if is_demo():
-        ins = demo_data.insights()
-    else:
-        c = client()
-        ins = c.account_insights(session["ig_id"])
-        for m in media[:12]:  # per-post insights for the latest posts
-            m["insights"] = c.media_insights(m["id"])
+    profile, media, ins = _own_full(refresh=request.args.get("refresh") == "1")
     acc = analyzer.analyze_account(profile, media)
     posts = [{"permalink": m.get("permalink"), "fmt": analyzer.media_format(m),
               "date": m.get("timestamp", "")[:10], "likes": m.get("like_count"),
@@ -208,12 +222,19 @@ def compare():
         return jsonify({"error": "Couldn't find comparable pages automatically. Add 2–3 usernames you know."}), 400
     own = analyzer.analyze_account(profile, media)
     comps, errors = [], []
-    for n in names[:10]:
+    fetch, key = _fetcher(), _ig_key()
+
+    def get(n):
         try:
-            p, m = discovery.cached_discover(_fetcher(), _ig_key(), n)
-            comps.append(analyzer.analyze_account(p, m))
+            return n, discovery.cached_discover(fetch, key, n), None
         except Exception as e:  # noqa: BLE001
-            errors.append(f"@{n}: {e} (must be a public Business/Creator account)")
+            return n, None, str(e)
+    from ig_client import parallel
+    for n, res, err in parallel(get, names[:10]):
+        if res:
+            comps.append(analyzer.analyze_account(*res))
+        else:
+            errors.append(f"@{n}: {err} (must be a public Business/Creator account)")
     result = analyzer.compare(own, comps)
     result["you"] = analyzer.public(own)
     result["errors"] = errors
@@ -252,13 +273,7 @@ def suggest_competitors():
 
 # ---------------- Reel review ----------------
 def _own_with_reel_insights():
-    profile, media = _own()
-    if not is_demo():
-        c = client()
-        for m in media:
-            if analyzer.media_format(m) == "Reel" and "insights" not in m:
-                m["insights"] = c.media_insights(m["id"], reel=True)
-    return profile, media
+    return _own()  # insights are already attached and cached by _own_full
 
 
 @app.get("/api/reels")

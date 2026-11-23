@@ -114,7 +114,7 @@ pre.cap{white-space:pre-wrap;background:var(--card2);padding:10px;border-radius:
   </div>
 {% else %}
 
-<section class="tab on" id="tab-dash"><div id="dashBody"><div class="card"><span class="spin"></span> Loading insights…</div></div></section>
+<section class="tab on" id="tab-dash"><div id="dashBody"><div class="card"><span class="spin"></span> Loading insights… <span class="small mute">(first load fetches your last 30 posts — about 10 seconds)</span></div></div></section>
 
 <section class="tab" id="tab-compare">
   <div class="card">
@@ -128,7 +128,7 @@ pre.cap{white-space:pre-wrap;background:var(--card2);padding:10px;border-radius:
 
 <section class="tab" id="tab-review">
   <div class="card"><div class="inline"><h2 style="margin:0">Your Reels</h2><span class="small mute">tap one to review</span></div>
-    <div class="strip" id="reelStrip" style="margin-top:8px"><span class="spin"></span></div></div>
+    <div class="strip" id="reelStrip" style="margin-top:8px"><span class="spin"></span> <span class="small mute">Loading your Reels…</span></div></div>
   <div id="reviewBody"></div>
 </section>
 
@@ -175,7 +175,8 @@ const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 const fmtN=n=>n==null?'—':(typeof n==='string'?n:(n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?(n/1e3).toFixed(1)+'k':Number(n).toLocaleString('en-IN')));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(m,ms=4000){const t=$('#toast');t.innerHTML=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',ms)}
-async function api(u,o={}){const r=await fetch(u,{headers:{'Content-Type':'application/json'},...o});const d=await r.json().catch(()=>({error:'Bad response'}));if(!r.ok||d.error)throw new Error(d.error||'Request failed');return d}
+async function api(u,o={}){const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),150000);let r;
+  try{r=await fetch(u,{headers:{'Content-Type':'application/json'},signal:ctl.signal,...o})}catch(e){throw new Error(e.name==='AbortError'?'Instagram is taking too long. Pull down or tap the tab again to retry.':'No connection. Check internet and retry.')}finally{clearTimeout(tm)}const d=await r.json().catch(()=>({error:'Bad response'}));if(!r.ok||d.error)throw new Error(d.error||'Request failed');return d}
 const store={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 const charts={};function chart(id,cfg){if(!window.Chart||!document.getElementById(id))return;charts[id]?.destroy();charts[id]=new Chart(document.getElementById(id),{...cfg,options:{maintainAspectRatio:false,...(cfg.options||{})}})}
 if(window.Chart){Chart.defaults.color='#9aa3b2';Chart.defaults.borderColor='#262b36';Chart.defaults.font.size=11}
@@ -190,24 +191,25 @@ function openTab(t){
   $$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
   $$('.tab').forEach(x=>x.classList.toggle('on',x.id==='tab-'+t));window.scrollTo(0,0);
   if(t==='compare'&&!loaded.compare){loaded.compare=1;runCompare(savedComps())}
-  if(t==='review'&&!loaded.review){loaded.review=1;loadReels()}
+  if(t==='review'&&(!loaded.review||$('#reelStrip').textContent.includes('⚠️'))){loaded.review=1;loadReels()}
   if(t==='upload')loadQuota();
 }
 $$('nav button').forEach(b=>b.onclick=()=>openTab(b.dataset.tab));
 
 async function loadAccounts(){try{const a=await api('/api/accounts');if(a.length>1){const s=$('#acctSel');s.style.display='';
-  s.innerHTML=a.map(x=>`<option value="${x.ig_id}" data-u="${esc(x.username)}">@${esc(x.username)}</option>`).join('');
+  s.innerHTML=a.map(x=>`<option value="${x.ig_id}" data-u="${esc(x.username)}" ${x.ig_id==='{{ current_ig }}'?'selected':''}>@${esc(x.username)}</option>`).join('');
+  const cur=document.querySelector('.right span');if(cur)cur.style.display='none';
   s.onchange=async()=>{await api('/api/select',{method:'POST',body:JSON.stringify({ig_id:s.value,username:s.selectedOptions[0].dataset.u})});location.reload()}}
   if(!a.length)$('#dashBody').innerHTML='<div class="card">No Instagram Business/Creator account is linked to your Facebook Pages.</div>';}catch(e){}}
 
 // ---------- HOME ----------
-async function loadDash(){
-  try{const d=await api('/api/dashboard'),a=d.account,t=d.insights.totals||{};
+async function loadDash(refresh){
+  try{const d=await api('/api/dashboard'+(refresh?'?refresh=1':'')),a=d.account,t=d.insights.totals||{};
     $('#dashBody').innerHTML=`
     <div class="card prof">${a.picture?`<img src="${a.picture}" alt="">`:'<div class="ph"></div>'}
       <div style="min-width:0"><b>${esc(a.name||a.username)}</b> <span class="mute small">@${esc(a.username)}</span><div class="mute small" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.bio)}</div></div>
       <div style="margin-left:auto;text-align:right"><b style="font-size:17px">${fmtN(a.followers)}</b><div class="mute small">followers</div></div></div>
-    <div class="small mute" style="margin:0 2px 5px">Last 28 days</div>
+    <div class="small mute" style="margin:0 2px 5px;display:flex">Last 28 days<a href="#" id="refreshDash" style="margin-left:auto">↻ Refresh</a></div>
     <div class="kpis">${kpi(t.views,'Views')}${kpi(t.reach,'Reached')}${kpi(t.accounts_engaged,'Engaged')}${kpi(t.total_interactions,'Interactions')}
       ${kpi(t.saves,'Saves')}${kpi(t.shares,'Shares')}${kpi(a.posts_per_week,'Posts / week')}${kpi(a.engagement_rate+'%','Engagement')}</div>
     ${seg('home',[['grow','Followers'],['fmt','Formats'],['aud','Audience'],['posts','Posts']])}
@@ -217,6 +219,7 @@ async function loadDash(){
       <div class="pane" data-pane="home-aud"><div class="two">${['age','city','gender'].map(b=>`<div><h3 class="small mute">${b}</h3>${(d.insights.demographics?.[b]||[]).slice(0,4).map(r=>`<div style="display:flex;justify-content:space-between;padding:2px 0"><span>${esc(r.key)}</span><span class="mute">${fmtN(r.value)}</span></div>`).join('')||'<span class="mute small">Needs 100+ followers</span>'}</div>`).join('')}</div></div>
       <div class="pane" data-pane="home-posts">${d.posts.slice(0,8).map(p=>`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px"><span class="mute" style="width:70px;flex:none">${p.date.slice(5)} · ${p.fmt}</span><a href="${p.permalink}" target="_blank" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.caption)||'(no caption)'}</a><span class="mute" style="flex:none">♥ ${fmtN(p.likes)}</span></div>`).join('')}</div>
     </div>`;
+    $('#refreshDash').onclick=e=>{e.preventDefault();$('#dashBody').innerHTML='<div class="card"><span class="spin"></span> Refreshing…</div>';loadDash(true)};
     const fc=d.insights.follower_change||[];
     chart('cFollow',{type:'bar',data:{labels:fc.map(x=>x.date.slice(5)),datasets:[{data:fc.map(x=>x.value),backgroundColor:'#e1306c'}]},options:{plugins:{legend:{display:false}}}});
     chart('cFmt',{type:'bar',data:{labels:Object.keys(a.format_er),datasets:[{data:Object.values(a.format_er),backgroundColor:'#f77737'}]},options:{plugins:{legend:{display:false}}}});

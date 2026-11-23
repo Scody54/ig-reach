@@ -6,6 +6,7 @@ Uses only Meta-approved endpoints: no scraping.
 """
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -30,6 +31,25 @@ DISCOVERY_MEDIA_FIELDS = ("caption,media_type,media_product_type,like_count,comm
 
 class GraphError(Exception):
     pass
+
+
+_POOL = ThreadPoolExecutor(max_workers=12)   # outer jobs (one per post / page / section)
+_INNER = ThreadPoolExecutor(max_workers=24)  # per-metric fallbacks started *inside* outer jobs
+
+
+def parallel(fn, items):
+    """Run fn over items concurrently (Graph calls are network-bound)."""
+    return list(_POOL.map(fn, items))
+
+
+def parallel_inner(fn, items):
+    """For work launched from inside a _POOL job — separate pool so it can never deadlock."""
+    return list(_INNER.map(fn, items))
+
+
+FEED_METRICS = ["reach", "views", "saved", "shares", "total_interactions", "likes", "comments"]
+REEL_METRICS = FEED_METRICS + ["ig_reels_avg_watch_time", "ig_reels_video_view_total_time",
+                               "reels_skip_rate", "follows"]
 
 
 def _check(resp):
@@ -96,66 +116,92 @@ class IGClient:
 
     # ----- insights -----
     def account_insights(self, ig_id, days=28):
-        """Totals for the last `days` (max 30). Each metric fetched separately so one
-        unsupported metric does not break the rest."""
+        """Totals for the last `days` (max 30) + follower trend + demographics, fetched in parallel."""
         until = datetime.now(timezone.utc)
         since = until - timedelta(days=min(days, 30))
-        totals = {}
-        for metric in ["views", "reach", "accounts_engaged", "total_interactions", "likes",
-                       "comments", "shares", "saves", "profile_links_taps", "follows_and_unfollows"]:
-            try:
-                d = self._get(f"{ig_id}/insights", metric=metric, period="day",
-                              metric_type="total_value", since=int(since.timestamp()),
-                              until=int(until.timestamp()))
-                for row in d.get("data", []):
-                    totals[row["name"]] = row.get("total_value", {}).get("value")
-            except GraphError:
-                totals.setdefault(metric, None)
+        metrics = ["views", "reach", "accounts_engaged", "total_interactions", "likes",
+                   "comments", "shares", "saves", "profile_links_taps", "follows_and_unfollows"]
+        rng = {"period": "day", "metric_type": "total_value",
+               "since": int(since.timestamp()), "until": int(until.timestamp())}
 
-        series = []
-        try:  # daily follower change (last 30 days, excludes today)
-            d = self._get(f"{ig_id}/insights", metric="follower_count", period="day",
-                          since=int((until - timedelta(days=29)).timestamp()),
-                          until=int((until - timedelta(days=1)).timestamp()))
+        def totals_for(ms):
+            out = {}
+            d = self._get(f"{ig_id}/insights", metric=",".join(ms), **rng)
             for row in d.get("data", []):
-                series = [{"date": v["end_time"][:10], "value": v["value"]} for v in row["values"]]
-        except GraphError:
-            pass
+                out[row["name"]] = row.get("total_value", {}).get("value")
+            return out
 
-        demographics = {}
-        for bd in ["age", "gender", "city"]:
+        def one(m):
+            try:
+                return totals_for([m])
+            except GraphError:
+                return {m: None}
+
+        def get_totals():
+            try:
+                return totals_for(metrics)
+            except GraphError:
+                out = {}
+                for part in parallel_inner(one, metrics):
+                    out.update(part)
+                return out
+
+        def get_series():
+            try:
+                d = self._get(f"{ig_id}/insights", metric="follower_count", period="day",
+                              since=int((until - timedelta(days=29)).timestamp()),
+                              until=int((until - timedelta(days=1)).timestamp()))
+                for row in d.get("data", []):
+                    return [{"date": v["end_time"][:10], "value": v["value"]} for v in row["values"]]
+            except GraphError:
+                pass
+            return []
+
+        def get_demo(bd):
             try:
                 d = self._get(f"{ig_id}/insights", metric="follower_demographics",
                               period="lifetime", metric_type="total_value",
                               timeframe="this_month", breakdown=bd)
                 rows = d["data"][0]["total_value"]["breakdowns"][0]["results"]
-                demographics[bd] = sorted(
-                    [{"key": r["dimension_values"][0], "value": r["value"]} for r in rows],
-                    key=lambda x: -x["value"])[:8]
+                return bd, sorted([{"key": r["dimension_values"][0], "value": r["value"]} for r in rows],
+                                  key=lambda x: -x["value"])[:8]
             except (GraphError, KeyError, IndexError):
-                pass
+                return bd, None
+
+        jobs = [_POOL.submit(get_totals), _POOL.submit(get_series)] + \
+               [_POOL.submit(get_demo, bd) for bd in ["age", "gender", "city"]]
+        totals, series = jobs[0].result(), jobs[1].result()
+        demographics = {bd: v for bd, v in (j.result() for j in jobs[2:]) if v}
         return {"totals": totals, "follower_change": series, "demographics": demographics}
 
     def media_insights(self, media_id, reel=False):
+        metrics = REEL_METRICS if reel else FEED_METRICS
         out = {}
-        metrics = ["reach", "views", "saved", "shares", "total_interactions", "likes", "comments"]
-        if reel:
-            metrics += ["ig_reels_avg_watch_time", "ig_reels_video_view_total_time", "reels_skip_rate", "follows"]
-        try:  # one call for everything; fall back to one-by-one if any metric is rejected
+        try:  # one call for everything
             d = self._get(f"{media_id}/insights", metric=",".join(metrics))
             for row in d.get("data", []):
                 out[row["name"]] = row["values"][0]["value"]
             return out
         except GraphError:
             pass
-        for metric in metrics:
+
+        def one(m):
             try:
-                d = self._get(f"{media_id}/insights", metric=metric)
-                for row in d.get("data", []):
-                    out[row["name"]] = row["values"][0]["value"]
+                d = self._get(f"{media_id}/insights", metric=m)
+                return {r["name"]: r["values"][0]["value"] for r in d.get("data", [])}
             except GraphError:
-                pass
+                return {}
+        for part in parallel_inner(one, metrics):  # fall back: each metric separately, in parallel
+            out.update(part)
         return out
+
+    def media_insights_bulk(self, media, is_reel):
+        """Fill m['insights'] for many posts at once."""
+        todo = [m for m in media if "insights" not in m]
+        results = parallel(lambda m: self.media_insights(m["id"], reel=is_reel(m)), todo)
+        for m, ins in zip(todo, results):
+            m["insights"] = ins
+        return media
 
     # ----- discovery sources -----
     def tagged_by(self, ig_id, limit=50):

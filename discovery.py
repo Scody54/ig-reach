@@ -104,26 +104,35 @@ def discover(fetch, own_profile, own_media, ig_id, extra_sources=None, seeds=Non
         add(u, reason)
 
     found, checked = {}, 0
-    while queue and checked < max_checks:
-        u = queue.pop(0)
+    from ig_client import parallel
+
+    def try_fetch(u):
         try:
-            profile, media = cached_discover(fetch, ig_id, u)
-        except Exception:
-            continue
-        checked += 1
-        if not media:
-            continue
-        sc, reasons, niche_hits = score_candidate(own_fp, own_followers, profile, media)
-        found[u] = {"username": profile.get("username") or u, "name": profile.get("name"),
-                    "followers": profile.get("followers_count"), "score": sc,
-                    "niche_hits": niche_hits, "source": why.get(u, ""), "reasons": reasons}
-        # snowball only from pages that are actually in the niche
-        if niche_hits >= 2:
-            for m in media[:12]:
-                for v in mentions(m.get("caption")):
-                    add(v, f"mentioned by @{profile.get('username') or u}")
-            for v in mentions(profile.get("biography")):
-                add(v, f"linked from @{profile.get('username') or u}'s bio")
+            return u, cached_discover(fetch, ig_id, u)
+        except Exception:  # not a business/creator account, private, or not found
+            return u, None
+
+    while queue and checked < max_checks:
+        batch = []
+        while queue and len(batch) < min(8, max_checks - checked):
+            batch.append(queue.pop(0))
+        for u, res in parallel(try_fetch, batch):  # check up to 8 pages at once
+            if res is None:
+                continue
+            checked += 1
+            profile, media = res
+            if not media:
+                continue
+            sc, reasons, niche_hits = score_candidate(own_fp, own_followers, profile, media)
+            found[u] = {"username": profile.get("username") or u, "name": profile.get("name"),
+                        "followers": profile.get("followers_count"), "score": sc,
+                        "niche_hits": niche_hits, "source": why.get(u, ""), "reasons": reasons}
+            if niche_hits >= 2:  # snowball only from pages that are actually in the niche
+                for m in media[:12]:
+                    for v in mentions(m.get("caption")):
+                        add(v, f"mentioned by @{profile.get('username') or u}")
+                for v in mentions(profile.get("biography")):
+                    add(v, f"linked from @{profile.get('username') or u}'s bio")
 
     ranked = sorted(found.values(), key=lambda r: -r["score"])
     top = ranked[0]["score"] if ranked else 0
@@ -139,15 +148,20 @@ def discover(fetch, own_profile, own_media, ig_id, extra_sources=None, seeds=Non
 
 def gather_sources(client, ig_id, own_media):
     """Extra candidate handles from accounts tagging you and from top posts under your hashtags."""
-    out = []
-    for t in client.tagged_by(ig_id):
-        if t.get("username"):
-            out.append((t["username"], "tagged you in a post"))
+    from ig_client import parallel
     tags = Counter(t.lower() for m in own_media for t in HASHTAG_RE.findall(m.get("caption") or ""))
-    for tag, _ in tags.most_common(3):  # Meta allows 30 unique hashtag searches per 7 days
-        for cap in client.hashtag_top_captions(ig_id, tag):
-            for u in mentions(cap):
-                out.append((u, f"active in top #{tag} posts"))
+    top = [t for t, _ in tags.most_common(3)]  # Meta allows 30 unique hashtag searches per 7 days
+    jobs = [("tags", None)] + [("ht", t) for t in top]
+
+    def run(job):
+        kind, tag = job
+        if kind == "tags":
+            return [(t["username"], "tagged you in a post") for t in client.tagged_by(ig_id) if t.get("username")]
+        return [(u, f"active in top #{tag} posts") for cap in client.hashtag_top_captions(ig_id, tag)
+                for u in mentions(cap)]
+    out = []
+    for part in parallel(run, jobs):
+        out += part
     return out
 
 
