@@ -1,0 +1,6 @@
+android/
+.github/
+tools/
+*.md
+.env
+__pycache__/

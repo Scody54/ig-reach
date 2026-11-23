@@ -1,0 +1,58 @@
+// Trusted Web Activity wrapper: opens the hosted IG Reach site full-screen in Chrome.
+// Build:  gradle assembleRelease -PappUrl=https://your-app.onrender.com
+plugins { id 'com.android.application' }
+
+def appUrl = (project.findProperty('appUrl') ?: 'https://ig-reach.onrender.com').toString().trim().replaceAll('/+$', '')
+def appHost = new URI(appUrl).host
+if (!appUrl.startsWith('https://') || !appHost) {
+    throw new GradleException("appUrl must be a full https:// address, got: ${appUrl}")
+}
+
+android {
+    namespace 'com.igreach.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId((project.findProperty('appId') ?: 'com.igreach.app').toString())
+        minSdk 21
+        targetSdk 34
+        versionCode((project.findProperty('versionCode') ?: '1').toString().toInteger())
+        versionName((project.findProperty('versionName') ?: '1.0.0').toString())
+
+        manifestPlaceholders = [hostName: appHost]
+        resValue 'string', 'launchUrl', appUrl + '/'
+        resValue 'string', 'assetStatements',
+            '[{\\"relation\\": [\\"delegate_permission/common.handle_all_urls\\"], \\"target\\": {\\"namespace\\": \\"web\\", \\"site\\": \\"' + appUrl + '\\"}}]'
+    }
+
+    signingConfigs {
+        release {
+            def ks = System.getenv('KEYSTORE_PATH')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (System.getenv('KEYSTORE_PATH')) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+}

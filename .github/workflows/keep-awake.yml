@@ -1,0 +1,22 @@
+# Free plan sleeps after 15 min idle (first open then takes ~50 s).
+# This pings the app every 10 minutes so the client never sees a slow start.
+# Setup: repo → Settings → Secrets and variables → Actions → Variables → New variable
+#   Name: APP_URL   Value: https://your-app.onrender.com
+name: Keep app awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          if [ -z "$APP_URL" ]; then echo "APP_URL variable not set yet — skipping."; exit 0; fi
+          curl -fsS --max-time 90 --retry 2 "$APP_URL/healthz" && echo " awake"

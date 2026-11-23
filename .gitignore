@@ -1,0 +1,13 @@
+.env
+__pycache__/
+static/uploads/*
+!static/uploads/.gitkeep
+.venv/
+
+# signing keys — never commit
+*.jks
+*.keystore
+ANDROID-SIGNING-SECRETS.txt
+android/.gradle/
+android/build/
+android/app/build/

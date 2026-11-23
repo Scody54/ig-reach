@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<title>IG Reach — grow your Instagram page</title>
+<script src="/static/chart.umd.min.js"></script>
+<style>
+  :root{--bg:#0f1115;--card:#171a21;--line:#262b36;--text:#e8eaf0;--mute:#9aa3b2;--acc:#e1306c;--acc2:#f77737;--ok:#3ecf8e;--warn:#f5a524;--bad:#f2555a}
+  *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+  header{display:flex;align-items:center;gap:16px;padding:14px 24px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+  .logo{font-weight:800;font-size:18px;background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;color:transparent}
+  nav{display:flex;gap:4px;margin-left:12px}nav button{background:none;border:0;color:var(--mute);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:14px}
+  nav button.on{background:var(--card);color:var(--text)}
+  .right{margin-left:auto;display:flex;gap:10px;align-items:center;color:var(--mute)}
+  main{max-width:1180px;margin:0 auto;padding:24px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+  h2{margin:0 0 12px;font-size:17px}h3{margin:0 0 8px;font-size:15px}
+  .grid{display:grid;gap:16px}.g2{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:860px){.g2,.g3,.g4{grid-template-columns:1fr}}
+  .kpi .v{font-size:24px;font-weight:700}.kpi .l{color:var(--mute);font-size:12px;margin-top:4px}
+  .btn{background:linear-gradient(90deg,var(--acc),var(--acc2));color:#fff;border:0;padding:10px 16px;border-radius:10px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+  .btn.ghost{background:none;border:1px solid var(--line);color:var(--text)}
+  input,textarea,select{width:100%;background:#0f1218;border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px;font:inherit}
+  textarea{min-height:110px;resize:vertical}label{display:block;color:var(--mute);font-size:12px;margin:10px 0 6px}
+  table{width:100%;border-collapse:collapse}td,th{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--mute);font-weight:500;font-size:12px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600}
+  .ahead{background:#163527;color:var(--ok)}.behind{background:#3a1a1c;color:var(--bad)}.par{background:#2c2a1a;color:var(--warn)}
+  .High{background:#3a1a1c;color:var(--bad)}.Medium{background:#2c2a1a;color:var(--warn)}.Low{background:#1a2635;color:#6cb6ff}
+  .tag{display:inline-block;background:#221a24;color:#ff8fb6;border-radius:8px;padding:4px 9px;margin:3px;cursor:pointer;font-size:13px}
+  .mute{color:var(--mute)}.small{font-size:12px}a{color:#ff8fb6}
+  .hero{text-align:center;padding:60px 20px}.hero h1{font-size:34px;margin:0 0 10px}.hero p{color:var(--mute);max-width:620px;margin:0 auto 24px;line-height:1.6}
+  .tab{display:none}.tab.on{display:block}
+  .rec{border-left:3px solid var(--line);padding:10px 14px;margin-bottom:10px;background:#12151b;border-radius:0 10px 10px 0}
+  ul.facts{margin:6px 0 0;padding-left:18px;line-height:1.7}
+  .toast{position:fixed;bottom:20px;right:20px;background:var(--card);border:1px solid var(--line);padding:12px 16px;border-radius:10px;display:none;max-width:380px;z-index:9}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--mute);border-top-color:transparent;border-radius:50%;animation:s 0.8s linear infinite;vertical-align:middle}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .banner{background:#2c2a1a;color:var(--warn);padding:8px 24px;font-size:13px;text-align:center}
+  .row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.row>*{flex:1}
+  pre.cap{white-space:pre-wrap;background:#12151b;padding:12px;border-radius:10px;margin:0 0 10px;font-family:inherit}
+  .tbl{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  nav .ic{display:none}
+  /* ---------- phone layout ---------- */
+  @media(max-width:700px){
+    body{font-size:15px;padding-bottom:calc(70px + env(safe-area-inset-bottom))}
+    header{padding:12px 14px}
+    .right span{display:none}.right .btn{padding:7px 12px;font-size:13px}
+    nav{position:fixed;bottom:0;left:0;right:0;margin:0;background:#141720;border-top:1px solid var(--line);
+        padding:6px 4px calc(6px + env(safe-area-inset-bottom));justify-content:space-around;z-index:6}
+    nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;padding:6px 2px}
+    nav button.on{background:none;color:var(--acc)}
+    nav .ic{display:block;font-size:20px;line-height:1}
+    main{padding:14px}
+    .card{padding:14px;border-radius:12px}
+    .kpi .v{font-size:20px}
+    .g4{grid-template-columns:repeat(2,1fr)!important;gap:10px}
+    .hero{padding:36px 8px}.hero h1{font-size:26px}
+    .hero .btn{display:block;margin:10px auto;max-width:320px;padding:14px}
+    .row{flex-direction:column;align-items:stretch}
+    .btn{padding:12px 16px}
+    input,textarea,select{font-size:16px} /* stops iOS/Android zoom on focus */
+    table{font-size:13px}.tbl table{min-width:540px}
+    .toast{left:12px;right:12px;bottom:84px;max-width:none}
+  }
+</style>
+</head>
+<body>
+{% if demo %}<div class="banner">Demo mode — sample data for a fictional bakery page. <a href="/logout">Exit demo</a>{% if configured %} · <a href="/login">Log in with your Instagram</a>{% endif %}</div>{% endif %}
+<header>
+  <div class="logo">IG Reach</div>
+  {% if logged_in %}
+  <nav>
+    <button class="on" data-tab="dash"><span class="ic">📊</span>Dashboard</button>
+    <button data-tab="compare"><span class="ic">🆚</span>Compare</button>
+    <button data-tab="ideas"><span class="ic">💡</span>Captions & SEO</button>
+    <button data-tab="upload"><span class="ic">⬆️</span>Upload</button>
+  </nav>
+  {% endif %}
+  <div class="right">
+    {% if logged_in %}<span>@{{ username or '' }}</span><select id="acctSel" style="width:auto;display:none"></select><a class="btn ghost" href="/logout">Log out</a>{% endif %}
+  </div>
+</header>
+
+<main>
+{% if not logged_in %}
+  <div class="hero">
+    <h1>Grow your Instagram reach with evidence, not guesswork</h1>
+    <p>Log in with your Instagram Business/Creator account. IG Reach reads your insights, benchmarks you against comparable pages, shows exactly what they do better, and gives you hashtags, SEO keywords, timing and captions — then lets you publish from here.</p>
+    {% if configured %}<a class="btn" href="/login">Log in with Facebook / Instagram</a>{% else %}<p class="small">Meta app not configured yet — add META_APP_ID and META_APP_SECRET to <code>.env</code> (see README).</p>{% endif %}
+    &nbsp;<a class="btn ghost" href="/demo">Try the demo</a>
+  </div>
+{% else %}
+
+<!-- DASHBOARD -->
+<section class="tab on" id="tab-dash">
+  <div id="dashBody"><div class="card"><span class="spin"></span> Loading your insights…</div></div>
+</section>
+
+<!-- COMPARE -->
+<section class="tab" id="tab-compare">
+  <div class="card">
+    <h2>Compare with similar pages</h2>
+    <div class="row">
+      <div><label>Competitor usernames (comma separated, public Business/Creator accounts)</label>
+      <input id="compInput" placeholder="{% if demo %}leave empty to use demo competitors{% else %}e.g. brand_one, brand_two, brand_three{% endif %}"></div>
+      <div style="flex:0"><button class="btn" id="compBtn">Analyse</button></div>
+    </div>
+    <p class="small mute">Tip: pick 3–6 pages in your niche and city that are 1–5× your size. Data comes from Instagram's official Business Discovery API.</p>
+  </div>
+  <div id="compBody"></div>
+</section>
+
+<!-- IDEAS -->
+<section class="tab" id="tab-ideas">
+  <div class="card">
+    <h2>Caption & hook generator</h2>
+    <div class="grid g2">
+      <div><label>What is the post about?</label><input id="capTopic" placeholder="e.g. eggless chocolate cake for a birthday"></div>
+      <div><label>Tone</label><select id="capTone"><option>friendly</option><option>premium</option><option>funny</option><option>informative</option></select></div>
+      <div><label>Search keywords (comma separated) — auto-filled after Compare</label><input id="capKw"></div>
+      <div><label>Hashtags (max 5) — auto-filled after Compare</label><input id="capTags"></div>
+    </div>
+    <p><button class="btn" id="capBtn">Generate captions</button> <span class="small mute" id="capSrc"></span></p>
+    <div id="capOut"></div>
+  </div>
+  <div id="seoBody"><div class="card mute">Run <b>Compare</b> first to get SEO keywords, hashtags and an upload plan built from competitor data.</div></div>
+</section>
+
+<!-- UPLOAD -->
+<section class="tab" id="tab-upload">
+  <div class="grid g2">
+    <div class="card">
+      <h2>Publish to Instagram</h2>
+      <label>Post type</label>
+      <select id="upKind"><option value="image">Single image</option><option value="reel">Reel (video)</option><option value="carousel">Carousel (2–10 items)</option></select>
+      <label>Upload file(s) or paste public URLs (one per line)</label>
+      <input type="file" id="upFiles" multiple accept="image/jpeg,image/png,video/mp4,video/quicktime">
+      <textarea id="upUrls" placeholder="https://…/photo.jpg" style="min-height:70px;margin-top:8px"></textarea>
+      <div id="reelOpts" style="display:none"><label>Cover image URL (optional)</label><input id="upCover"></div>
+      <div id="altOpts"><label>Alt text (helps accessibility + search)</label><input id="upAlt" placeholder="e.g. Two-tier chocolate cake with gold leaf"></div>
+      <label>Caption <span id="tagCount" class="small"></span></label>
+      <textarea id="upCaption"></textarea>
+      <p><button class="btn" id="upBtn">Publish now</button> <span class="small mute" id="quota"></span></p>
+      <p class="small mute">JPEG for images. MP4/MOV (H.264, AAC) for Reels, 9:16, 3s–15min. Instagram downloads the file from its URL, so it must be publicly reachable.</p>
+    </div>
+    <div class="card">
+      <h2>Pre-publish checklist</h2>
+      <div id="checklist"></div>
+      <h3 style="margin-top:16px">Best time to post</h3>
+      <div id="bestTime" class="mute">Run Compare to see your best days and time windows.</div>
+    </div>
+  </div>
+</section>
+{% endif %}
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmtN = n => n==null ? '—' : (n>=1e6 ? (n/1e6).toFixed(1)+'M' : n>=1e4 ? (n/1e3).toFixed(1)+'k' : Number(n).toLocaleString('en-IN'));
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(msg, ms=4000){const t=$('#toast');t.innerHTML=msg;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',ms)}
+async function api(url, opts={}){const r=await fetch(url,{headers:{'Content-Type':'application/json'},...opts});const d=await r.json().catch(()=>({error:'Bad response'}));if(!r.ok||d.error)throw new Error(d.error||'Request failed');return d}
+const charts={};function chart(id,cfg){if(!window.Chart)return;charts[id]?.destroy();charts[id]=new Chart(document.getElementById(id),cfg)}
+if(window.Chart){Chart.defaults.color='#9aa3b2';Chart.defaults.borderColor='#262b36';}
+
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));$('#tab-'+b.dataset.tab).classList.add('on');
+  window.scrollTo(0,0);
+  if(b.dataset.tab==='upload') loadQuota();
+});
+
+let LAST = null; // last compare result
+const store={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+if($('#compInput')) $('#compInput').value=store.get('competitors')||'';
+
+// ---------- account picker ----------
+async function loadAccounts(){
+  try{const a=await api('/api/accounts');if(a.length>1){const s=$('#acctSel');s.style.display='';
+    s.innerHTML=a.map(x=>`<option value="${x.ig_id}" data-u="${esc(x.username)}">@${esc(x.username)}</option>`).join('');
+    s.onchange=async()=>{await api('/api/select',{method:'POST',body:JSON.stringify({ig_id:s.value,username:s.selectedOptions[0].dataset.u})});location.reload()}}
+    if(!a.length) $('#dashBody').innerHTML='<div class="card">No Instagram Business/Creator account is linked to your Facebook Pages. Switch your Instagram to a professional account and link it to a Page, then log in again.</div>';
+  }catch(e){}
+}
+
+// ---------- dashboard ----------
+async function loadDash(){
+  try{
+    const d=await api('/api/dashboard');const a=d.account,t=d.insights.totals||{};
+    const k=(v,l)=>`<div class="card kpi"><div class="v">${typeof v==='string'?v:fmtN(v)}</div><div class="l">${l}</div></div>`;
+    $('#dashBody').innerHTML=`
+      <div class="card" style="display:flex;gap:16px;align-items:center">
+        ${a.picture?`<img src="${a.picture}" style="width:56px;height:56px;border-radius:50%">`:''}
+        <div><h2 style="margin:0">${esc(a.name||a.username)} <span class="mute">@${esc(a.username)}</span></h2>
+        <div class="mute">${esc(a.bio)}</div></div>
+        <div style="margin-left:auto;text-align:right"><div class="kpi"><div class="v">${fmtN(a.followers)}</div><div class="l">followers</div></div></div>
+      </div>
+      <h3 class="mute">Last 28 days (Instagram Insights)</h3>
+      <div class="grid g4">${k(t.views,'Views')}${k(t.reach,'Accounts reached')}${k(t.accounts_engaged,'Accounts engaged')}${k(t.total_interactions,'Interactions')}
+      ${k(t.saves,'Saves')}${k(t.shares,'Shares')}${k(t.profile_links_taps,'Profile link taps')}${k(t.follows_and_unfollows,'Follows / unfollows')}</div>
+      <h3 class="mute">From your last ${a.sample} posts</h3>
+      <div class="grid g4">${k(a.posts_per_week,'Posts per week')}${k(a.engagement_rate+'%','Engagement rate')}${k(a.avg_likes,'Avg likes')}${k(a.avg_comments,'Avg comments')}</div>
+      <div class="grid g2">
+        <div class="card"><h3>Daily follower change</h3><canvas id="cFollow" height="160"></canvas></div>
+        <div class="card"><h3>Engagement rate by format</h3><canvas id="cFmt" height="160"></canvas></div>
+      </div>
+      <div class="grid g3">
+        ${['age','gender','city'].map(b=>`<div class="card"><h3>Followers by ${b}</h3>${(d.insights.demographics?.[b]||[]).map(r=>`<div style="display:flex;justify-content:space-between;padding:4px 0"><span>${esc(r.key)}</span><span class="mute">${fmtN(r.value)}</span></div>`).join('')||'<span class="mute small">Needs 100+ followers</span>'}</div>`).join('')}
+      </div>
+      <div class="card"><h3>Recent posts</h3><div class="tbl"><table><tr><th>Date</th><th>Format</th><th>Caption</th><th>Likes</th><th>Comments</th><th>Reach</th><th>Saves</th><th>Shares</th></tr>
+      ${d.posts.map(p=>`<tr><td>${p.date}</td><td>${p.fmt}</td><td><a href="${p.permalink}" target="_blank">${esc(p.caption)||'(no caption)'}</a></td><td>${fmtN(p.likes)}</td><td>${fmtN(p.comments)}</td><td>${fmtN(p.insights.reach)}</td><td>${fmtN(p.insights.saved)}</td><td>${fmtN(p.insights.shares)}</td></tr>`).join('')}</table></div></div>`;
+    const fc=d.insights.follower_change||[];
+    chart('cFollow',{type:'bar',data:{labels:fc.map(x=>x.date.slice(5)),datasets:[{data:fc.map(x=>x.value),backgroundColor:'#e1306c'}]},options:{plugins:{legend:{display:false}}}});
+    chart('cFmt',{type:'bar',data:{labels:Object.keys(a.format_er),datasets:[{data:Object.values(a.format_er),backgroundColor:'#f77737'}]},options:{plugins:{legend:{display:false}},scales:{y:{title:{display:true,text:'ER %'}}}}});
+  }catch(e){$('#dashBody').innerHTML=`<div class="card">⚠️ ${esc(e.message)}</div>`}
+}
+
+// ---------- compare ----------
+$('#compBtn')?.addEventListener('click', async()=>{
+  store.set('competitors',$('#compInput').value);
+  const names=$('#compInput').value.split(',').map(s=>s.trim()).filter(Boolean);
+  $('#compBody').innerHTML='<div class="card"><span class="spin"></span> Pulling competitor data and benchmarking…</div>';
+  try{const d=await api('/api/compare',{method:'POST',body:JSON.stringify({competitors:names})});LAST=d;renderCompare(d);renderIdeas(d);renderUploadHelp(d)}
+  catch(e){$('#compBody').innerHTML=`<div class="card">⚠️ ${esc(e.message)}</div>`}
+});
+
+function renderCompare(d){
+  const st=s=>`<span class="pill ${({'on par':'par','higher':'par','lower':'par','over limit':'behind'})[s]||s}">${s}</span>`;
+  const accts=[d.you,...d.competitors];
+  $('#compBody').innerHTML=`
+    ${d.errors?.length?`<div class="card" style="color:var(--warn)">${d.errors.map(esc).join('<br>')}</div>`:''}
+    <div class="card"><h2>Action plan</h2>
+      ${d.recommendations.map(r=>`<div class="rec"><span class="pill ${r.priority}">${r.priority}</span> <b>${esc(r.title)}</b>
+      <div class="small mute" style="margin:6px 0">Evidence: ${esc(r.why)}</div><div>👉 ${esc(r.action)}</div></div>`).join('')||'<p class="mute">You are at or above benchmark on every tracked metric. 🎉</p>'}
+    </div>
+    <div class="card"><h2>Scorecard vs competitor median</h2><div class="tbl"><table><tr><th>Metric</th><th>You</th><th>Median</th><th>Leader</th><th>Status</th></tr>
+      ${d.scorecard.map(r=>`<tr><td>${r.metric}</td><td>${r.you}${r.unit}</td><td>${r.benchmark}${r.unit}</td><td>${esc(r.leader)} (${r.leader_value}${r.unit})</td><td>${st(r.status)}</td></tr>`).join('')}</table></div></div>
+    <div class="grid g2">
+      <div class="card"><h3>Engagement rate (%)</h3><canvas id="cER" height="170"></canvas></div>
+      <div class="card"><h3>Format mix (% of posts)</h3><canvas id="cMix" height="170"></canvas></div>
+    </div>
+    <h2 style="margin:20px 0 10px">Evidence: what each page is doing</h2>
+    <div class="grid g2">${d.evidence.map(e=>`<div class="card"><h3>@${esc(e.username)} <span class="mute small">${fmtN(e.followers)} followers</span></h3>
+      <ul class="facts">${e.facts.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>
+      <h3 style="margin-top:12px">Their top posts</h3>${e.top_posts.map(p=>`<div class="small" style="padding:6px 0;border-top:1px solid var(--line)"><a href="${p.permalink}" target="_blank">${p.fmt} · ${fmtN(p.eng)} engagements · ${p.date}</a><div class="mute">${esc(p.caption)}</div></div>`).join('')}
+    </div>`).join('')}</div>`;
+  chart('cER',{type:'bar',data:{labels:accts.map(a=>'@'+a.username),datasets:[{data:accts.map(a=>a.engagement_rate),backgroundColor:accts.map((a,i)=>i?'#3a4150':'#e1306c')}]},options:{plugins:{legend:{display:false}}}});
+  const F=['Reel','Carousel','Image'],C=['#e1306c','#f77737','#6c7a96'];
+  chart('cMix',{type:'bar',data:{labels:accts.map(a=>'@'+a.username),datasets:F.map((f,i)=>({label:f,data:accts.map(a=>a.format_mix[f]||0),backgroundColor:C[i]}))},options:{scales:{x:{stacked:true},y:{stacked:true,max:100}}}});
+}
+
+// ---------- ideas / SEO ----------
+function renderIdeas(d){
+  const h=d.hashtags,s=d.seo;
+  $('#capKw').value=s.missing_keywords.slice(0,5).join(', ');$('#capTags').value=h.ready_set.join(' ');
+  $('#seoBody').innerHTML=`
+    <div class="grid g2">
+      <div class="card"><h2>Profile SEO</h2><p>${esc(s.name_field)}</p>
+        <h3>Keywords competitors use that you don't</h3><div>${s.missing_keywords.map(k=>`<span class="tag">${esc(k)}</span>`).join('')||'<span class="mute">None — nice.</span>'}</div>
+        <h3 style="margin-top:14px">Search tips</h3><ul class="facts">${s.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>
+      <div class="card"><h2>Hashtags</h2><p class="small mute">${esc(h.note)}</p>
+        <h3>Ready-to-use set (click to copy)</h3><div><span class="tag" id="copySet">${h.ready_set.join(' ')||'—'}</span></div>
+        <table style="margin-top:10px"><tr><th>Tag</th><th>Posts</th><th>Pages</th><th>Lift</th><th>You use</th></tr>
+        ${h.suggested.map(r=>`<tr><td><span class="tag" onclick="navigator.clipboard.writeText('#${r.tag}');toast('Copied #${r.tag}')">#${esc(r.tag)}</span></td><td>${r.uses}</td><td>${r.accounts}</td><td>${r.avg_lift}×</td><td>${r.you_use?'✓':''}</td></tr>`).join('')}</table></div>
+    </div>`;
+  $('#copySet').onclick=()=>{navigator.clipboard.writeText(h.ready_set.join(' '));toast('Hashtag set copied')};
+}
+
+$('#capBtn')?.addEventListener('click', async()=>{
+  $('#capOut').innerHTML='<span class="spin"></span>';
+  try{const d=await api('/api/captions',{method:'POST',body:JSON.stringify({topic:$('#capTopic').value||'my latest post',keywords:$('#capKw').value,hashtags:$('#capTags').value,tone:$('#capTone').value})});
+    $('#capSrc').textContent=d.source==='claude'?'Written by Claude':'Template mode (add ANTHROPIC_API_KEY for AI captions)';
+    $('#capOut').innerHTML=d.captions.map((c,i)=>`<pre class="cap">${esc(c)}</pre><button class="btn ghost" data-i="${i}">Use in Upload</button> `).join('<div style="height:10px"></div>')+
+      `<h3 style="margin-top:16px">Reel ideas</h3><ul class="facts">${(d.reel_ideas||[]).map(r=>`<li>${esc(r)}</li>`).join('')}</ul>`;
+    $('#capOut').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('#upCaption').value=d.captions[b.dataset.i];checkCaption();document.querySelector('[data-tab=upload]').click()});
+  }catch(e){$('#capOut').innerHTML='⚠️ '+esc(e.message)}
+});
+
+// ---------- upload ----------
+function renderUploadHelp(d){
+  const p=d.upload_plan;
+  $('#bestTime').innerHTML=`<p>Best days: <b>${p.best_days.slice(0,3).join(', ')}</b><br>Best windows: <b>${p.best_slots.slice(0,2).join(', ')}</b><br>Lead format: <b>${p.best_format}</b> · Target: <b>${p.posts_per_week} posts/week</b></p>
+  <table>${p.specs.map(s=>`<tr><td><b>${s.format}</b><div class="small mute">${s.size}</div></td><td class="small">${s.tip}</td></tr>`).join('')}</table><p class="small mute">${p.note}</p>`;
+}
+function checkCaption(){
+  const c=$('#upCaption').value||'',tags=(c.match(/#\w+/g)||[]).length,first=c.split('\n')[0]||'';
+  $('#tagCount').textContent=`· ${tags}/5 hashtags · ${c.length}/2200 chars`;$('#tagCount').style.color=tags>5?'var(--bad)':'';
+  const kw=(LAST?.seo?.missing_keywords||[]).concat($('#capKw')?.value.split(',').map(s=>s.trim().toLowerCase())||[]).filter(Boolean);
+  const items=[
+    [first.length>0&&first.length<=125,'Strong first line (≤125 chars, shows before "more")'],
+    [tags>=1&&tags<=5,'1–5 targeted hashtags'],
+    [/\b(comment|save|share|tag|follow|dm|link in bio|send|order|book|tell me|tell us|let me know)\b/i.test(c),'Has a call-to-action'],
+    [c.includes('?'),'Asks a question'],
+    [kw.some(k=>k&&c.toLowerCase().includes(k)),'Includes a search keyword'],
+    [$('#upKind').value!=='image'||$('#upAlt').value.trim().length>0,'Alt text added (images)'],
+  ];
+  $('#checklist').innerHTML=items.map(([ok,l])=>`<div style="padding:5px 0">${ok?'✅':'⬜'} ${l}</div>`).join('');
+}
+['#upCaption','#upAlt'].forEach(s=>$(s)?.addEventListener('input',checkCaption));
+$('#upKind')?.addEventListener('change',()=>{const k=$('#upKind').value;$('#reelOpts').style.display=k==='reel'?'':'none';$('#altOpts').style.display=k==='image'?'':'none';checkCaption()});
+async function loadQuota(){try{const q=await api('/api/publish-limit');$('#quota').textContent=`Posts used in last 24h: ${q.used??'?'} / ${q.limit??100}`}catch(e){}}
+
+$('#upBtn')?.addEventListener('click', async()=>{
+  const btn=$('#upBtn');btn.disabled=true;btn.innerHTML='<span class="spin"></span> Publishing…';
+  try{
+    const items=$('#upUrls').value.split('\n').map(s=>s.trim()).filter(Boolean).map(u=>({url:u,type:/\.(mp4|mov)(\?|$)/i.test(u)?'VIDEO':'IMAGE'}));
+    for(const f of $('#upFiles').files){const fd=new FormData();fd.append('file',f);
+      const r=await fetch('/api/upload-file',{method:'POST',body:fd});const d=await r.json();if(d.error)throw new Error(d.error);
+      if(d.warning)toast('⚠️ '+d.warning,7000);items.push({url:d.url,type:d.type})}
+    const d=await api('/api/publish',{method:'POST',body:JSON.stringify({kind:$('#upKind').value,items,caption:$('#upCaption').value,alt_text:$('#upAlt').value,cover_url:$('#upCover').value})});
+    toast('✅ '+d.message+' (id '+d.id+')',6000);loadQuota();
+  }catch(e){toast('⚠️ '+esc(e.message),8000)}
+  btn.disabled=false;btn.textContent='Publish now';
+});
+
+if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+{% if logged_in %}loadAccounts();loadDash();checkCaption();{% endif %}
+</script>
+</body>
+</html>

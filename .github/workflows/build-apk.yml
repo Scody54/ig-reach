@@ -1,0 +1,87 @@
+# Builds the Android APK in the cloud and publishes it as a GitHub Release.
+# Run it: GitHub repo → Actions → "Build Android APK" → Run workflow → paste your app URL.
+# Stable download link afterwards:
+#   https://github.com/<you>/<repo>/releases/latest/download/IGReach.apk
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "Your hosted app URL (https://…, e.g. https://ig-reach.onrender.com)"
+        required: true
+      version_name:
+        description: "Version shown to users"
+        required: false
+        default: "1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Check secrets are set
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::error::Add the 4 ANDROID_* secrets first (see ANDROID-SIGNING-SECRETS.txt)."
+            exit 1
+          fi
+
+      - name: Restore signing key
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build signed APK
+        working-directory: android
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          gradle assembleRelease --no-daemon \
+            -PappUrl="${{ inputs.app_url }}" \
+            -PversionName="${{ inputs.version_name }}" \
+            -PversionCode="${{ github.run_number }}"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/IGReach.apk"
+
+      - name: Verify signature
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          "$APKSIGNER" verify --print-certs IGReach.apk | tee certs.txt
+          echo "### APK built ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "Signing cert:" >> "$GITHUB_STEP_SUMMARY"
+          grep SHA-256 certs.txt >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: IG Reach ${{ inputs.version_name }} (build ${{ github.run_number }})
+          body: |
+            Android app for ${{ inputs.app_url }}
+            Install on phone: open ${{ inputs.app_url }}/download
+          files: IGReach.apk
+          make_latest: true
+
+      - name: Download link
+        run: |
+          echo "Download: https://github.com/${{ github.repository }}/releases/latest/download/IGReach.apk" >> "$GITHUB_STEP_SUMMARY"

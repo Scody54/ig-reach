@@ -1,0 +1,33 @@
+# One-click deploy on Render: Dashboard → New → Blueprint → pick this repo.
+services:
+  - type: web
+    name: ig-reach
+    runtime: python
+    plan: free            # free sleeps after 15 min idle (~50s wake-up). "starter" stays awake.
+    region: singapore     # closest Render region to India
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 8 --timeout 330
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: FLASK_SECRET
+        generateValue: true
+      - key: HTTPS_ONLY
+        value: "1"
+      - key: GRAPH_API_VERSION
+        value: v25.0
+      - key: APP_TIMEZONE
+        value: Asia/Kolkata
+      - key: ANDROID_PACKAGE
+        value: com.igreach.app
+      - key: ANDROID_SHA256   # fingerprint of the app's signing key (public, not secret)
+        value: "0C:66:FA:19:0B:30:A4:83:A2:B1:61:1D:CB:86:3E:0A:3D:77:31:E4:C2:6B:88:FD:BB:BA:30:CC:96:40:56:8E"
+      - key: APK_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
