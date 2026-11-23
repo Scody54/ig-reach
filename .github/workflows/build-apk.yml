@@ -35,27 +35,53 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Check secrets are set
+      - name: Verify signing secrets
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          K_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          K_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -z "$KS_B64" ]; then
-            echo "::error::Add the 4 ANDROID_* secrets first (see ANDROID-SIGNING-SECRETS.txt)."
-            exit 1
+          fail=0
+          for v in KS_B64 KS_PASS K_ALIAS K_PASS; do
+            if [ -z "$(printf '%s' "${!v}" | tr -d '[:space:]')" ]; then echo "::error::Secret for $v is empty"; fail=1; fi
+          done
+          [ $fail = 1 ] && exit 1
+          # strip stray spaces/newlines from copy-paste
+          printf '%s' "$KS_B64" | tr -d '[:space:]' > b64.txt
+          if ! base64 -d b64.txt > "$RUNNER_TEMP/release.jks" 2>/dev/null; then
+            echo "::error::ANDROID_KEYSTORE_B64 is not valid base64 — re-copy the whole long line."; exit 1
           fi
-
-      - name: Restore signing key
-        env:
-          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-        run: echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          rm b64.txt
+          KS_PASS=$(printf '%s' "$KS_PASS" | tr -d '[:space:]')
+          K_ALIAS=$(printf '%s' "$K_ALIAS" | tr -d '[:space:]')
+          K_PASS=$(printf '%s' "$K_PASS" | tr -d '[:space:]')
+          if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$KS_PASS" >/dev/null 2>&1; then
+            echo "::error::ANDROID_KEYSTORE_PASSWORD is wrong, or ANDROID_KEYSTORE_B64 is cut short."; exit 1
+          fi
+          if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$KS_PASS" -alias "$K_ALIAS" >/dev/null 2>&1; then
+            echo "::error::ANDROID_KEY_ALIAS is wrong (should be igreach)."; exit 1
+          fi
+          if [ "$K_PASS" != "$KS_PASS" ]; then
+            echo "::error::ANDROID_KEY_PASSWORD must be the same as ANDROID_KEYSTORE_PASSWORD."; exit 1
+          fi
+          FP=$(keytool -list -v -keystore "$RUNNER_TEMP/release.jks" -storepass "$KS_PASS" -alias "$K_ALIAS" | grep 'SHA256:' | awk '{print $2}')
+          echo "Key fingerprint: $FP"
+          if [ "$FP" != "0C:66:FA:19:0B:30:A4:83:A2:B1:61:1D:CB:86:3E:0A:3D:77:31:E4:C2:6B:88:FD:BB:BA:30:CC:96:40:56:8E" ]; then
+            echo "::warning::Key fingerprint differs from the one on the server — app will show a browser bar until ANDROID_SHA256 on Render is updated."
+          fi
+          echo "All 4 signing secrets verified ✅"
+          echo "KS_PASS_CLEAN=$KS_PASS" >> "$GITHUB_ENV"
+          echo "K_ALIAS_CLEAN=$K_ALIAS" >> "$GITHUB_ENV"
+          echo "::add-mask::$KS_PASS"
 
       - name: Build signed APK
         working-directory: android
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/release.jks
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ env.KS_PASS_CLEAN }}
+          KEY_ALIAS: ${{ env.K_ALIAS_CLEAN }}
+          KEY_PASSWORD: ${{ env.KS_PASS_CLEAN }}
         run: |
           gradle assembleRelease --no-daemon \
             -PappUrl="${{ inputs.app_url }}" \
