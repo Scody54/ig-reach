@@ -136,6 +136,16 @@ def service_worker():
     return resp
 
 
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
+
+@app.route("/data-deletion")
+def data_deletion():
+    return render_template("privacy.html")
+
+
 @app.route("/healthz")
 def healthz():
     return "ok"
