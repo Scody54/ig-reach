@@ -16,6 +16,7 @@ load_dotenv()
 import analyzer  # noqa: E402
 import captions  # noqa: E402
 import demo_data  # noqa: E402
+import discovery  # noqa: E402
 from ig_client import GraphError, IGClient, exchange_code, login_url  # noqa: E402
 
 APP_ID = os.getenv("META_APP_ID", "")
@@ -190,25 +191,84 @@ def compare():
     if r := need_login():
         return r
     names = [n.strip().lstrip("@") for n in request.get_json(force=True).get("competitors", []) if n.strip()]
-    if is_demo() and not names:
-        names = demo_data.DEMO_COMPETITORS
-    if not names:
-        return jsonify({"error": "Add at least one competitor username."}), 400
     profile, media = _own()
+    if not names:  # nothing chosen yet → find comparable pages automatically
+        names = [r["username"] for r in _suggest(profile, media)["picked"]]
+    if not names:
+        return jsonify({"error": "Couldn't find comparable pages automatically. Add 2–3 usernames you know."}), 400
     own = analyzer.analyze_account(profile, media)
     comps, errors = [], []
-    for n in names[:8]:
+    for n in names[:10]:
         try:
-            p, m = demo_data.competitor(n) if is_demo() else client().discover(session["ig_id"], n)
+            p, m = discovery.cached_discover(_fetcher(), _ig_key(), n)
             comps.append(analyzer.analyze_account(p, m))
-        except GraphError as e:
+        except Exception as e:  # noqa: BLE001
             errors.append(f"@{n}: {e} (must be a public Business/Creator account)")
     result = analyzer.compare(own, comps)
     result["you"] = analyzer.public(own)
     result["errors"] = errors
+    result["names"] = [c["username"] for c in comps]
     session["last_context"] = {"hashtags": result.get("hashtags", {}).get("ready_set", []),
-                               "keywords": result.get("seo", {}).get("missing_keywords", [])[:6]}
+                               "keywords": result.get("seo", {}).get("missing_keywords", [])[:6],
+                               "competitors": result["names"][:5]}
     return jsonify(result)
+
+
+def _ig_key():
+    return "demo" if is_demo() else session["ig_id"]
+
+
+def _fetcher():
+    if is_demo():
+        return demo_data.fetch
+    c, ig = client(), session["ig_id"]
+    return lambda u: c.discover(ig, u, limit=20)
+
+
+def _suggest(profile, media, saved=None):
+    extra = [] if is_demo() else discovery.gather_sources(client(), session["ig_id"], media)
+    seeds = (saved or []) + discovery.seeds_from_env()
+    return discovery.discover(_fetcher(), profile, media, _ig_key(), extra_sources=extra, seeds=seeds)
+
+
+@app.post("/api/competitors/suggest")
+def suggest_competitors():
+    if r := need_login():
+        return r
+    profile, media = _own()
+    saved = request.get_json(silent=True) or {}
+    return jsonify(_suggest(profile, media, saved.get("seeds")))
+
+
+# ---------------- Reel review ----------------
+def _own_with_reel_insights():
+    profile, media = _own()
+    if not is_demo():
+        c = client()
+        for m in media:
+            if analyzer.media_format(m) == "Reel" and "insights" not in m:
+                m["insights"] = c.media_insights(m["id"], reel=True)
+    return profile, media
+
+
+@app.get("/api/reels")
+def reels():
+    if r := need_login():
+        return r
+    profile, media = _own_with_reel_insights()
+    return jsonify({"reels": analyzer.reel_list(media)})
+
+
+@app.get("/api/review/<media_id>")
+def review(media_id):
+    if r := need_login():
+        return r
+    profile, media = _own_with_reel_insights()
+    reel = next((m for m in media if m.get("id") == media_id), None)
+    if not reel:
+        return jsonify({"error": "Reel not found in your last 30 posts."}), 404
+    own = analyzer.analyze_account(profile, media)
+    return jsonify(analyzer.review_reel(reel, media, own, session.get("last_context")))
 
 
 @app.post("/api/captions")
@@ -250,13 +310,15 @@ def publish():
     if not items:
         return jsonify({"error": "Add at least one media URL."}), 400
     if is_demo():
+        what = "Trial Reel" if b.get("trial") else "post"
         return jsonify({"ok": True, "id": "demo_" + uuid.uuid4().hex[:8],
-                        "message": "Demo mode: nothing was posted. Log in to publish for real."})
+                        "message": f"Demo mode: no {what} was published. Log in to publish for real."})
     c, ig = client(), session["ig_id"]
     if kind == "image":
         mid = c.publish_image(ig, items[0]["url"], caption, b.get("alt_text"))
     elif kind == "reel":
-        mid = c.publish_reel(ig, items[0]["url"], caption, b.get("cover_url") or None)
+        mid = c.publish_reel(ig, items[0]["url"], caption, b.get("cover_url") or None,
+                             trial=bool(b.get("trial")))
     elif kind == "carousel":
         mid = c.publish_carousel(ig, items, caption)
     else:

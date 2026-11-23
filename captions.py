@@ -28,7 +28,7 @@ def _templates(topic, keywords, hashtags):
     out = []
     for hook in random.sample(HOOKS, 3):
         h = hook.format(kw=kw, Kw=kw.capitalize())
-        body = f"{topic.strip().capitalize()}. Here's what makes it worth it 👇"
+        body = f"{topic.strip().rstrip('.!?').capitalize()}. Here's what makes it worth it 👇"
         cta = random.choice(CTAS).format(kw=kw.split()[0].upper() if kw else "YES")
         out.append(f"{h}\n\n{body}\n\n{cta}\n\n{' '.join(hashtags[:5])}".strip())
     return {"source": "templates", "captions": out,

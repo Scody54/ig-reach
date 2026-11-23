@@ -28,7 +28,8 @@ should some such than that their theirs them themselves then there these they th
 through under until very were what when where which while whom with would your yours
 yourself yourselves will shall make made like love today this that what with from have
 your just more than into over only every much many most when here there they them their
-dont cant wont its it's you're we're link bio follow comment share save tag""".split())
+dont cant wont its it's you're we're link bio follow comment share save tag
+thanks thank week weekend everyone guys""".split())
 
 
 # ---------------- helpers ----------------
@@ -366,3 +367,151 @@ def upload_plan(own, comps, b):
         ],
         "note": "Specs are general best practice; timing comes from your data and your competitors'.",
     }
+
+
+# ---------------- Reel review ----------------
+def _reel_stats(m):
+    ins = m.get("insights") or {}
+    views = ins.get("views") or m.get("view_count") or 0
+    reach = ins.get("reach") or 0
+    likes = ins.get("likes", m.get("like_count")) or 0
+    comments = ins.get("comments", m.get("comments_count")) or 0
+    saves, shares = ins.get("saved") or 0, ins.get("shares") or 0
+    base = reach or views or 1
+    awt = ins.get("ig_reels_avg_watch_time")
+    return {
+        "views": views, "reach": reach, "likes": likes, "comments": comments,
+        "saves": saves, "shares": shares, "follows": ins.get("follows"),
+        "avg_watch_s": round(awt / 1000, 1) if awt else None,
+        "skip_rate": round(ins["reels_skip_rate"], 1) if ins.get("reels_skip_rate") is not None else None,
+        "eng_rate": round((likes + comments + saves + shares) / base * 100, 2),
+        "share_rate": round(shares / base * 100, 2), "save_rate": round(saves / base * 100, 2),
+        "follow_per_1k": round((ins.get("follows") or 0) / base * 1000, 1) if ins.get("follows") is not None else None,
+    }
+
+
+def reel_list(media):
+    reels = [m for m in media if media_format(m) == "Reel"]
+    vals = [_reel_stats(m)["views"] for m in reels]
+    med = _median(vals, 1) or 1
+    out = []
+    for m in reels:
+        s = _reel_stats(m)
+        idx = s["views"] / med
+        out.append({"id": m["id"], "date": _ts(m["timestamp"]).strftime("%d %b"),
+                    "caption": (m.get("caption") or "")[:70], "thumb": m.get("thumbnail_url"),
+                    "permalink": m.get("permalink"), "views": s["views"], "index": round(idx, 2),
+                    "label": "Top" if idx >= 1.4 else "Low" if idx <= 0.7 else "Avg"})
+    return out
+
+
+def review_reel(reel, all_media, own_acc, compare_ctx=None):
+    reels = [m for m in all_media if media_format(m) == "Reel"]
+    s = _reel_stats(reel)
+    allstats = [_reel_stats(m) for m in reels]
+
+    def med(k):
+        return _median([x[k] for x in allstats if x[k] is not None], None)
+
+    base = {k: med(k) for k in ["views", "reach", "eng_rate", "share_rate", "save_rate",
+                                "avg_watch_s", "skip_rate", "follow_per_1k"]}
+    idx = s["views"] / (base["views"] or 1)
+    verdict = ("Top performer" if idx >= 1.4 else "Underperforming" if idx <= 0.7 else "Average")
+
+    rows = []
+    for key, label, unit, higher in [("views", "Views", "", True), ("reach", "Accounts reached", "", True),
+                                     ("skip_rate", "Skipped in first 3s", "%", False),
+                                     ("avg_watch_s", "Avg watch time", "s", True),
+                                     ("eng_rate", "Engagement / reach", "%", True),
+                                     ("share_rate", "Shares / reach", "%", True),
+                                     ("save_rate", "Saves / reach", "%", True),
+                                     ("follow_per_1k", "Follows per 1k reached", "", True)]:
+        v, b = s[key], base[key]
+        if v is None:
+            continue
+        good = None if b in (None, 0) else ((v >= b) if higher else (v <= b))
+        rows.append({"label": label, "value": v, "benchmark": _r(b, 1) if b is not None else None,
+                     "unit": unit, "good": good})
+
+    cap = reel.get("caption") or ""
+    first = cap.split("\n")[0].strip()
+    tags = HASHTAG_RE.findall(cap)
+    posted = _ts(reel["timestamp"])
+    best_days = [d["label"] for d in own_acc.get("best_days", [])[:3]]
+    best_slots = [d["label"] for d in own_acc.get("best_slots", [])[:2]]
+    kws = (compare_ctx or {}).get("keywords") or []
+
+    issues = []
+
+    def issue(sev, title, why, fix):
+        issues.append({"severity": sev, "title": title, "why": why, "fix": fix})
+
+    if s["skip_rate"] is not None and s["skip_rate"] >= 45:
+        issue("High", "The hook loses people",
+              f"{s['skip_rate']}% swiped away in the first 3 seconds (your Reels' median: {base['skip_rate']}%).",
+              "Open on the result or the most striking frame. Put a 5-7 word text hook on screen in frame 1. Cut any intro, logo or 'hi guys'.")
+    if s["avg_watch_s"] is not None and base["avg_watch_s"] and s["avg_watch_s"] < 0.8 * base["avg_watch_s"]:
+        issue("High", "Viewers leave early",
+              f"Average watch time {s['avg_watch_s']}s vs your usual {base['avg_watch_s']}s.",
+              "Trim to 7–15s, cut every pause, change the shot every 1–2s, and end on a frame that loops back to the start.")
+    if base["share_rate"] and s["share_rate"] < 0.7 * base["share_rate"]:
+        issue("Medium", "Not shareable enough",
+              f"{s['share_rate']}% of viewers shared it vs your usual {base['share_rate']}%. Shares drive reach to non-followers.",
+              "Give people a reason to send it: a relatable moment, a 'tag someone who…' angle, or a tip their friend needs.")
+    if base["save_rate"] and s["save_rate"] < 0.7 * base["save_rate"]:
+        issue("Medium", "Low save value",
+              f"{s['save_rate']}% saved it vs your usual {base['save_rate']}%.",
+              "Add something worth keeping: a recipe card, price list, steps or a checklist as the last frame. Say 'Save this'.")
+    if s["follow_per_1k"] is not None and base["follow_per_1k"] and s["follow_per_1k"] < 0.6 * base["follow_per_1k"]:
+        issue("Medium", "Few new followers from it",
+              f"{s['follow_per_1k']} follows per 1,000 reached vs your usual {base['follow_per_1k']}.",
+              "Give non-followers a reason to follow: say it's part 1 of a series, or end with 'Follow for part 2'.")
+    if s["reach"] and own_acc.get("followers") and s["reach"] < 0.3 * own_acc["followers"]:
+        issue("Medium", "Barely left your followers",
+              f"Reached {s['reach']:,} accounts — under 30% of your {own_acc['followers']:,} followers.",
+              "Re-post as a Trial Reel (shown to non-followers first) with a new hook, or collaborate with a comparable page.")
+    if not first or len(first) > 125:
+        issue("Low", "Caption has no first-line hook",
+              "Only the first ~125 characters show before 'more'.",
+              "Start the caption with one short line that promises the payoff.")
+    if len(tags) > HASHTAG_CAP:
+        issue("Low", f"Too many hashtags ({len(tags)})", f"Instagram allows {HASHTAG_CAP}.", "Keep the 3–5 most specific ones.")
+    elif not tags:
+        issue("Low", "No hashtags", "A few niche tags still help discovery.", "Add 3–5 specific tags from Captions & SEO.")
+    if not CTA_RE.search(cap):
+        issue("Low", "No call-to-action", "Captions with one clear ask get more comments and saves.",
+              "End with one ask: 'Save this', 'Send to a friend who…' or 'Comment YES for the recipe'.")
+    if kws and not any(k in cap.lower() for k in kws):
+        issue("Low", "No search keyword", "Instagram search reads captions.",
+              f"Work in one keyword naturally, e.g. '{kws[0]}'.")
+    if best_days and DAYS[posted.weekday()] not in best_days:
+        issue("Low", "Posted on a weaker day",
+              f"Posted on {DAYS[posted.weekday()]} at {posted.strftime('%I:%M %p')}.",
+              f"Your strongest days: {', '.join(best_days)}; windows: {', '.join(best_slots)}.")
+
+    actions = []
+    if verdict != "Top performer":
+        actions.append({"key": "trial", "title": "Re-post as a Trial Reel",
+                        "detail": "Shown to non-followers first; Instagram shares it with your followers only if it does well. Use a new first 2 seconds and a new caption."})
+    else:
+        actions.append({"key": "pin", "title": "Pin it to the top of your profile",
+                        "detail": "Your best Reels convert profile visitors into followers. Pin it in the Instagram app (… → Pin to your profile)."})
+    actions += [
+        {"key": "story", "title": "Share it to your Story with a sticker",
+         "detail": "Add a poll or question sticker. Story taps send viewers back to the Reel and signal interest."},
+        {"key": "comments", "title": "Reply to the top comments with video replies",
+         "detail": "Each video reply is a new Reel that links back to this one."},
+        {"key": "carousel", "title": "Turn it into a carousel",
+         "detail": "Use 4–6 key frames + text. Carousels earn saves and reach a different audience."},
+    ]
+    comps = (compare_ctx or {}).get("competitors") or []
+    if comps:
+        actions.append({"key": "collab", "title": f"Collab with @{comps[0]}",
+                        "detail": "A collab post appears on both profiles. Pick a page from Compare with a similar audience."})
+
+    return {"verdict": verdict, "index": round(idx, 2), "stats": s, "rows": rows,
+            "issues": sorted(issues, key=lambda i: {"High": 0, "Medium": 1, "Low": 2}[i["severity"]]),
+            "actions": actions, "caption": cap, "first_line": first,
+            "posted": posted.strftime("%a %d %b, %I:%M %p"), "permalink": reel.get("permalink"),
+            "media_url": reel.get("media_url"), "thumb": reel.get("thumbnail_url"),
+            "note": "Instagram's API can't edit a published caption — copy the new one and edit it in the app, or re-post as a Trial Reel."}

@@ -136,9 +136,19 @@ class IGClient:
                 pass
         return {"totals": totals, "follower_change": series, "demographics": demographics}
 
-    def media_insights(self, media_id):
+    def media_insights(self, media_id, reel=False):
         out = {}
-        for metric in ["reach", "views", "saved", "shares", "total_interactions"]:
+        metrics = ["reach", "views", "saved", "shares", "total_interactions", "likes", "comments"]
+        if reel:
+            metrics += ["ig_reels_avg_watch_time", "ig_reels_video_view_total_time", "reels_skip_rate", "follows"]
+        try:  # one call for everything; fall back to one-by-one if any metric is rejected
+            d = self._get(f"{media_id}/insights", metric=",".join(metrics))
+            for row in d.get("data", []):
+                out[row["name"]] = row["values"][0]["value"]
+            return out
+        except GraphError:
+            pass
+        for metric in metrics:
             try:
                 d = self._get(f"{media_id}/insights", metric=metric)
                 for row in d.get("data", []):
@@ -146,6 +156,24 @@ class IGClient:
             except GraphError:
                 pass
         return out
+
+    # ----- discovery sources -----
+    def tagged_by(self, ig_id, limit=50):
+        """Usernames of accounts that tagged this account in their posts."""
+        try:
+            d = self._get(f"{ig_id}/tags", fields="username,caption", limit=limit)
+            return d.get("data", [])
+        except GraphError:
+            return []
+
+    def hashtag_top_captions(self, ig_id, tag):
+        """Captions of top posts under a hashtag (no usernames are returned by Meta)."""
+        try:
+            hid = self._get("ig_hashtag_search", user_id=ig_id, q=tag.lstrip("#"))["data"][0]["id"]
+            d = self._get(f"{hid}/top_media", user_id=ig_id, fields="caption,like_count,comments_count", limit=30)
+            return [m.get("caption") or "" for m in d.get("data", [])]
+        except (GraphError, KeyError, IndexError):
+            return []
 
     # ----- competitors -----
     def discover(self, ig_id, username, limit=25):
@@ -185,11 +213,17 @@ class IGClient:
         self._wait(cid)
         return self._publish(ig_id, cid)
 
-    def publish_reel(self, ig_id, video_url, caption, cover_url=None, share_to_feed=True):
+    def publish_reel(self, ig_id, video_url, caption, cover_url=None, share_to_feed=True, trial=False):
+        """trial=True publishes a Trial Reel: shown to non-followers first, auto-shared to
+        followers if it performs well (graduation_strategy SS_PERFORMANCE)."""
         data = {"media_type": "REELS", "video_url": video_url, "caption": caption,
                 "share_to_feed": "true" if share_to_feed else "false"}
         if cover_url:
             data["cover_url"] = cover_url
+        if trial:
+            import json as _json
+            data["trial_params"] = _json.dumps({"graduation_strategy": "SS_PERFORMANCE"})
+            data.pop("share_to_feed", None)
         cid = self._post(f"{ig_id}/media", **data)["id"]
         self._wait(cid)
         return self._publish(ig_id, cid)
